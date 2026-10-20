@@ -11,6 +11,7 @@
 | v1.0 | 2026-09-21 | 初版：算法原理/可行性/创新点/预估效果 |
 | v1.1 | 2026-10-04 | 创新点由 6 项升级为 10 项；新增 §1.2.9 关键数学定义；医学输出改为三级可信度标记；计数指标按密度-检测融合更新为 <3%；配合软著申请（见《MEGA-Vision-软著申请方案.md》） |
 | v1.2 | 2026-10-04 | 第五轮全项目遍历检查：补全需求映射表 1–3 行、需求 4 分行标注（§0） |
+| v1.3 | 2026-10-04 | 文献融合（ScienceDirect 18 篇调研、采纳 7 项）：新增 §1.2.10 文献融合增强；掩码损失/阈值、稀有类增广、域漂移方法论、回归不平衡等条目更新 |
 
 ---
 
@@ -142,6 +143,21 @@
 - **检测指标**：AP@50 / mAP@50:95 / AR 一律按 COCO 官方定义（`pycocotools`）计算，不自行定义。
 - **三级可信度（创新点 9）**：绿 = 置信度 ≥0.9 且掩码自评 IoU ≥0.8 → 自动输出；黄 = 其余 → 集成复核并附不确定性说明；红 = 集成后仍低置信或计数不可信 → 人工复核。可选 conformal prediction：由校准集分位数 q̂ 构造 C(x) = {k : score_k ≥ q̂}，保证 P(Y∈C) ≥ 1−α（分布无关覆盖）。
 
+#### 1.2.10 文献融合增强（2026-10 ScienceDirect 调研，采纳 7 项）
+
+| # | 来源文献 | 融合点 | 预期收益 | 落地等级 |
+|---|---|---|---|---|
+| L1 | Crack segmentation of imbalanced data: The role of loss functions（Eng. Struct. 2023） | Phase 4 掩码损失默认 **Focal Tversky**（重度失衡下综合排名最优）+ **OTR 最优二值化阈值搜索**取代固定 0.5 | 小病灶/细目标掩码 IoU 与召回提升，成本近零 | 必做 |
+| L2 | Towards Minimizing Domain Gap Using Synthetic Data（IFAC 2024） | Phase 8 **扰动影响分排序**：加入/剔除消融量化每类扰动的域差贡献，输出漂移威胁优先级清单与增广配方 ROI 排序（并识别负收益增强项） | 压测可解释性 + 增广配方有依据，无需新模型 | 必做 |
+| L3 | KNNOR-Reg: oversampling in imbalanced regression（Software Impacts 2025，MIT，开源） | Phase 5 生长阶段/天数等连续标签在冻结特征空间的**直方图分箱 + KNN 插值过采样**（标签反距离加权），仅特征级不回图像 | 长尾区间回归 MAE/RMSE 改善，依赖极轻 | 标准 |
+| L4 | Challenges and opportunities of generative models on tabular data（Appl. Soft Comput. 2024） | Phase 5 稀有类增广**三重门控**：规模 Gate（<500 例用 SMOTE 族/特征级，扩散只在大规模后开启）、ENN 式近邻一致性过滤、入池前后 AUC 对比验收 | 防止小样本下扩散增广反噬精度 | 标准 |
+| L5 | Light&fast GAN for CT image synthesis（Comput. Meth. Prog. Biomed. 2024） | Phase 5 低算力备选生成器（无预训练、消费级 GPU、约 100 张起步）+ **GLCM 纹理保真度门**作为合成样本质量门 | 算力受限时的稀有类增广替代路径 | 备选 |
+| L6 | Flexible content-aware image synthesis for maritime tasks（Appl. Ocean Res. 2025，开源） | Phase 5 内容感知合成（FAM/BAM/3D-AFM 三条件解耦 + 物理合理摆放 + 质量门）；**医学模态禁用任意姿态变换** | 农业稀有目标合成失真下降，下游 mAP 提升 | 备选 |
+| L7 | Decision support from financial disclosures with DNN and transfer learning（DSS 2017） | 协议级：预训练→微调两段式佐证；不平衡评估惯例（稀有类补报 balanced accuracy）；**农业生长阶段数据按时间顺序切分防时序泄漏** | 评估可信度与协议规范性 | 必做 |
+
+**已评估但排除（9 篇）**：纯数学 6 篇（有限元/非线性分析/分数布朗运动等）、亚式期权定价（数值逼近，无交集）、骨科临床病例系列（无 ML）、随机权重网络训练式激活函数（与端到端梯度训练范式不兼容）。
+**限定消融（不进主线，仅一次实验）**：振荡激活 NCU（z−z³）与固定参数 tanhLU 在路由器/分析头隐藏层各做一次 GPU 消融，无 ≥0.5 pp 稳定提升即放弃。
+
 ### 1.3 两个示范应用场景
 
 **场景 A：菜园俯视正向航拍图——每株植物识别与生长分析**
@@ -197,6 +213,7 @@
 | 域漂移（新设备/新地块） | 精度下降 | 冻结底座泛化性 + 原型在线更新 + 无监督域自适应 |
 | SAM 对密集重叠目标混淆 | 掩码错误 | 掩码质量自评 + 低质量样本转人工/集成复核 |
 | 小样本与全量仍有差距 | 不满足需求 5 | 一致性验证协议强制拦截，触发主动学习/LoRA 补强 |
+| 扩散/生成增广在小样本下反噬精度 | 稀有类更差 | L4 规模 Gate + ENN 过滤 + 入池前后 AUC 对比验收，不改善即弃用 |
 
 ---
 
