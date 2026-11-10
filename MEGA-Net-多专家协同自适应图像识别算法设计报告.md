@@ -2,7 +2,7 @@
 
 **算法名称**：MEGA-Net（Multi-Expert Grounded Adaptive Network，多专家协同自适应识别网络）
 **定位**：一套"统一底座 + 可插拔领域任务头 + 多专家协同"的通用复杂场景图像识别框架，模型功能由训练样本类别决定（农业航拍、医学影像、工业质检等均可承载）。
-**设计基准**：2024–2026 国际最新成果（DINOv3/DEIMv2、SAM 2.1、CheXFound/EVA-X/Ark+、UniHSFormer-X 等）。
+**设计基准**：2024–2026 国际最新成果（DINOv3 2025、DEIMv2 2025、SAM 2.1 2024 / SAM 3.1 2026、D-FINE 2025、EVA-X / Ark+ 2025、UniHSFormer-X 2025 等；截至 2026-11-10 核验，见《MEGA-Vision-技术可行性验证报告.md》v3.0）。
 
 ## 版本记录
 
@@ -12,6 +12,7 @@
 | v1.1 | 2026-10-04 | 创新点由 6 项升级为 10 项；新增 §1.2.9 关键数学定义；医学输出改为三级可信度标记；计数指标按密度-检测融合更新为 <3%；配合软著申请（见《MEGA-Vision-软著申请方案.md》） |
 | v1.2 | 2026-10-04 | 第五轮全项目遍历检查：补全需求映射表 1–3 行、需求 4 分行标注（§0） |
 | v1.3 | 2026-10-04 | 文献融合（ScienceDirect 18 篇调研、采纳 7 项）：新增 §1.2.10 文献融合增强；掩码损失/阈值、稀有类增广、域漂移方法论、回归不平衡等条目更新 |
+| **v1.4** | **2026-11-10** | **第六轮：目标执行模型迁移 GPT-6 Astra + 2026-11 技术栈刷新**。底座 DINOv2→DINOv3 ViT-L/16；检测 DEIM→DEIMv2（DINOv3 原生集成 + STA，NC 许可标注）；分割 SAM 2.1（默认）/SAM 3.1（2026-03 升级项）；细节支路更正为 ConvNeXt stem+stage1；修正 8 处引用（CheXFound 标题≠模型名、Ark+/UniHSFormer-X 标题、SAM 2.1 年份、IFAC/LF-GAN/AOR 标题、KNNOR 许可）与 2 条无出处断言；许可证表重写（DINOv2 权重 Apache-2.0、DEIMv2 NC、SAM License）；预估指标改为"以原文与复现为准"的保守口径。详见《MEGA-Vision-第六轮审查与Astra适配报告.md》 |
 
 ---
 
@@ -21,7 +22,7 @@
 |---|---|---|
 | 1 | 创新图像识别算法 | MEGA-Net 十项创新点（见 §3），全部有工程落地路径与验收锚点 |
 | 2 | 适用于特殊领域 | 农业（菜园航拍逐株）与医学（胸部 X 光）双示范域，领域任务头可插拔 |
-| 3 | 参考国际最新算法设计 | 2023–2026 SOTA 组件：DINOv3/DEIMv2、SAM 2.1、CheXFound/EVA-X/Ark+、UniHSFormer-X 等 |
+| 3 | 参考国际最新算法设计 | 2024–2026 SOTA 组件：DINOv3（2025）、DEIMv2（2025）、SAM 2.1（2024）/SAM 3.1（2026）、D-FINE（2025）；医学与高光谱对照文献 EVA-X / Ark+（2025）、UniHSFormer-X（2025） |
 | 4 | 高精度、高鲁棒性 | 基础模型视觉特征 + Transformer 检测头 + 不确定性校准集成 + TTA |
 | 4（续） | 多目标检测/分类/分析 | "检测 → 实例分割 → 分类 → 领域分析"四级流水线，全链路可微 |
 | 5 | 小样本与海量样本结果基本一致 | 冻结视觉底座 + 低参原型度量头 + 一致性验证协议（见 §1.2.7） |
@@ -38,7 +39,7 @@
 ```
                     ┌──────────────────────────────────┐
  输入：可见光影像     │  视觉底座（冻结）                 │
- （+可选高光谱立方体）│  DINOv2 / DINOv3 ViT 主干        │
+ （+可选高光谱立方体）│  DINOv3 ViT-L/16 主干（RoPE）    │
                     │  + 高分辨率细节支路（CNN 浅层）    │
                     └────────────────┬─────────────────┘
                                      │ 多尺度特征金字塔 F
@@ -68,15 +69,16 @@
 
 #### 1.2.1 视觉底座：基础模型特征 + 高分辨率细节支路
 
-- **全局语义支路**：采用自监督基础模型 **DINOv2（ViT-L/14）或 DINOv3** 作为冻结主干。基础模型特征具备强泛化性与判别力，是"小样本可用"的根基：在冻结特征上做线性探测/原型分类即可取得接近全量微调的效果。
-- **局部细节支路**：ViT patch 尺寸（14×14）对"每株植物"“X 光微小结节"等微小目标分辨率不足，因此并联一条轻量 CNN 浅层高分辨率特征提取支路（如 ConvNeXt 前 3 层），输出 1/4 分辨率细节特征。
-- **融合方式**：细节特征经 1×1 卷积对齐维度后与 ViT 多尺度特征做 **cross-scale attention 融合**（即 DEIMv2 中 Spatial Tuning Adapter 的思路），得到 {P2, P3, P4, P5} 特征金字塔。底座参数在领域微调阶段冻结，仅训练融合层与下游头，参数量 < 5%。
+- **全局语义支路**：采用自监督基础模型 **DINOv3 ViT-L/16（2025-08，300M 参数，patch=16，RoPE 位置编码）** 作为冻结主干（备选 DINOv2 ViT-L/14）。DINOv3 对多分辨率输入友好（输入只需为 patch 的整数倍，无绝对位置编码插值问题）；512 输入得到 32×32 patch token。基础模型特征具备强泛化性与判别力，是"小样本可用"的根基：在冻结特征上做线性探测/原型分类即可取得接近全量微调的效果。
+- **局部细节支路**：ViT patch 尺寸（16×16）对"每株植物""X 光微小结节"等微小目标分辨率不足，因此并联一条轻量 CNN 浅层高分辨率特征提取支路（**ConvNeXt-Tiny 的 stem + stage1，stride=4，输出 1/4 分辨率**；注意 ConvNeXt stage2/3 的 stride 分别为 8/16，不能取"前 3 个 stage"）。
+- **融合方式**：细节特征经 1×1 卷积对齐维度后与 ViT 多尺度特征做 **cross-scale attention 融合**（即 DEIMv2 中 Spatial Tuning Adapter, STA 的思路），得到 {P2, P3, P4, P5} 特征金字塔。底座参数在领域微调阶段冻结，仅训练融合层与下游头，参数量 < 5%。
 
 #### 1.2.2 阶段一：多目标检测专家（query-based Transformer 检测头）
 
-- 采用 **DINO（ICLR 2023）风格的 query-based DETR 检测头**，并吸收 **DEIM/DEIMv2（CVPR 2025）** 的最新训练技术：
+- 采用 **DINO（ICLR 2023）风格的 query-based DETR 检测头**，并吸收 **DEIM（CVPR 2025）与 DEIMv2（2025-09，DINOv3 原生集成）** 的最新训练技术：
   - **对比去噪训练（Contrastive Denoising）**：在训练时注入带噪声的 GT 框作为负查询，加速收敛并强化小目标召回；
   - **密集一对一匹配（Dense O2O）+ 匹配感知损失（MAL）**：提升监督密度，同样训练轮数下精度更高；
+  - **STA（Spatial Tuning Adapter）**：把冻结 DINOv3 的单一尺度 patch 特征适配为多尺度检测特征，是 DEIMv2 的关键设计；
 - **复杂场景/微小目标专项设计**：
   - **切片式推理（SAHI，Slicing Aided Hyper Inference）**：大图按重叠网格切片推理后合并，等效提升小目标有效分辨率，是航拍图每株检测的关键手段；
   - **跨尺度上下文增强**：检测头中增加针对高层级语义与低层级细节的尺度敏感注意力，抑制菜园行间阴影、X 光肋骨重叠等背景干扰；
@@ -84,7 +86,7 @@
 
 #### 1.2.3 阶段二：实例专家（Promptable 分割）
 
-- 以阶段一输出的检测框作为 **box prompt** 送入 **SAM 2.1**，生成像素级实例掩码。SAM 系列模型零样本泛化能力强（农业、医学域均已有验证：SAM2 在太阳能板航拍分割、SAM2CT 在 CT 病灶分割上优于前代），使框架在少量标注下即可获得"每株植物"级精细结果。
+- 以阶段一输出的检测框作为 **box prompt** 送入 **SAM 2.1（2024-09-30，Hiera-Large，Apache-2.0，默认教师）**；【P1 升级】可选 **SAM 3.1（2026-03-27，Object Multiplex，SAM License，gated，848M 参数）** 的 tracker 接口（兼容 SAM2 box prompt API），仅作零样本教师推理、不参与训练与最终推理。SAM 系列零样本泛化能力强，使框架在少量标注下即可获得"每株植物"级精细结果；SAM 3 引入文本/示例概念提示与 presence token，但本项目只使用其 box-prompt 分割能力。
 - **掩码质量自评**：附加轻量 IoU 预测头，对每个掩码估计其与真值的 IoU；低质量掩码标记为"困难样本"，转交协同层处理（见 §1.2.5），避免错误传播到分析阶段。
 - 掩码内逐像素光谱/纹理统计（均值光谱、面积、形状系数）作为后续分析头的输入特征。
 
@@ -97,7 +99,7 @@
   该头参数量极小、天然适配小样本（每类 1–10 张即可构建原型），且样本量增大时通过原型在线更新（指数滑动平均）平滑收敛——这是"小样本与海量样本结果基本一致"的核心机制（原型网络思路 + 基础模型特征的现代结合）。
 - **领域分析头（可插拔，决定模型功能）**：
   - 农业：生长阶段回归（苗期/营养期/开花/成熟）、健康指数评分、株数统计、结合高光谱支路的养分/水分胁迫估计（NDVI 等植被指数由光谱直接计算或由 RGB 支路回归）；
-  - 医学（胸部 X 光）：多标签场景（一张片可同时有多个病灶），采用 14 个独立 one-vs-rest 二分类（原型/探测头）而非互斥 softmax；异常评分 = 校准后病种概率最大值，附 Grad-CAM 类热力图作为定位证据，输出含三级可信度标记（绿自动/黄复核/红人工）的辅助诊断报告要素；
+  - 医学（胸部 X 光）：多标签场景（一张片可同时有多个病灶），采用 14 个独立 one-vs-rest 二分类（原型/探测头）而非互斥 softmax；ROI 通道监督来源必须明确——CXR14 仅有 8 类专家框（BBox_List_2017，约 984 框）+ TBX11K/SIIM 补充框，其余病种用弱监督 CAM 伪框（v1.4 补齐）；异常评分 = 校准后病种概率最大值，附 Grad-CAM 类热力图作为定位证据，输出含三级可信度标记（绿自动/黄复核/红人工）的辅助诊断报告要素；
   - 通用：每实例输出 `{类别, 置信度, 属性向量, 分析结论}`，构成"检测—分类—分析"全链路结果。
 
 #### 1.2.5 阶段四：多模型协同层（对应需求 8）
@@ -106,14 +108,14 @@
    - 路径 A（常规场景）：轻量筛查模型（蒸馏后的 RT-DETR 量级）→ 原型分类 → 输出；
    - 路径 B（复杂/困难场景）：重型专家链 DINO+DEIM 检测 → SAM 2.1 分割 → 集成分类。
    - **难度路由器**：一个轻量场景复杂度评估器（目标密度、遮挡率、光照一致性、掩码自评得分）决定走哪条路径；阈值由验证集校准，保证困难样本不流失、常规样本不浪费算力。
-2. **不确定性加权集成**：ViT 系与 CNN 系异构专家（或不同种子/不同尺度 TTA）并行推理，用温度标定后的预测熵倒数加权融合，输出校准置信度。低置信度结果主动上报，避免静默出错（对医学场景尤其重要）。
+2. **不确定性加权集成**：**架构异构**的多链专家（如 MEGA-DINOv3+DEIMv2 链、D-FINE 链、RT-DETR 链）并行推理，用温度标定后的预测熵倒数加权融合，输出校准置信度。**不同随机种子/不同尺度 TTA 的同架构模型属于同质成员，不计入"异构"**（v1.4 修正）。低置信度结果主动上报，避免静默出错（对医学场景尤其重要）。
 3. **知识蒸馏**：云端大模型（底座+全专家链）蒸馏到边缘小模型（单检测头+原型分类），保持精度 90% 以上的同时把延迟降到实时级。
 
 #### 1.2.6 跨模态扩展：光谱支路（面向农业高光谱）
 
 - 高光谱立方体经 **光谱 Transformer（SpectralFormer 风格，或 UniHSFormer-X 的原型引导 token 路由思路）** 提取谱特征；
 - 谱特征与 §1.2.1 的 RGB 视觉特征做**交叉注意力融合**，输出"谱-空联合特征"用于生长阶段分类与胁迫分析；
-- 需先做 RGB-高光谱配准（2025 年已有光学流配准方法将误差降到 2–4 像素），保证每株植物谱-空特征严格对应。
+- 需先做 RGB-高光谱配准（可用 SIFT/RANSAC 或光流类方法），配准误差必须实测并写入报告（不做未经验证的误差承诺），保证每株植物谱-空特征严格对应。
 
 #### 1.2.7 小样本—海量样本一致性机制（对应需求 5）
 
@@ -136,7 +138,7 @@
 - **原型分类（单标签，创新点 2/10）**：p(y=k|x) = exp(−d(x,c_k)/τ) / Σ_j exp(−d(x,c_j)/τ)，d 为余弦距离；协方差加权版用 Mahalanobis 距离 d²_M(x,c_k) = (x−c_k)ᵀ Σ_k⁻¹ (x−c_k)，Σ_k 为正则化类内协方差（Σ_k + εI，ε=1e-3）；原型在线更新 c_k ← (1−m)c_k + m·x̄_batch（EMA，m=0.9）。
 - **多标签（医学，v1.1 纠错后）**：14 个独立 one-vs-rest 二分类 p_k(x) = σ(w_kᵀ f(x) + b_k)，k=1…14（互斥 softmax 在此不适用）；异常评分 = max_k p_k（温度标定后），整体异常判定 = 任一 p_k 超过校准阈值。
 - **温度标定与 ECE**：q = softmax(z/T)，T* = argmin_T NLL(验证集)；ECE = Σ_b (n_b/N)·|acc(b) − conf(b)|，b 为置信分箱（Gate 6 要求 ECE ≤ 0.05）。
-- **gap 方差-偏差分解**：gap = L(f_few) − L(f_full)。方差项 = Var_{S∼D}[L(f_S)]（支持集重采样 B≥10 次估计）；偏差项 = E_S[L(f_S)] − L(f_full)。判定规则：方差项 ≥ gap/2 → 增样本/协方差原型；否则 → 底座适配（continue-pretrain/LoRA）。
+- **gap 方差/偏差诊断（v1.4 公式修正）**：gap = L(f_few) − L(f_full)，定义偏差项 = E_S[L(f_S)] − L(f_full)（即 −gap），方差项 = Var_{S∼D}[L(f_S)]（支持集重采样 B≥10 次估计）。**方差不是与 gap 相加的项**，而是 gap 的抽样不确定度：SE² ≈ Var/B。判定规则：|gap| > 2·SE → 偏差主导 → 底座适配（continue-pretrain/LoRA）；否则 → 方差主导 → 增样本/协方差加权原型；两者均不显著 → 记录"统计上不可区分"，不强行归因。Phase 7 按此规则执行（旧版"方差项 ≥ gap/2"因量纲不一致已作废）。
 - **掩码指标换算**：IoU = |M∩G| / |M∪G|，Dice = 2|M∩G| / (|M|+|G|)，换算 IoU = Dice/(2−Dice)——Dice 0.897 → IoU 0.813，即 Gate 4 阈值 0.80 的文献依据。
 - **密度计数与融合（创新点 8）**：N̂_d = Σ_ij D_ij（密度图积分）；N̂_det 为检测计数；若 |N̂_det − N̂_d| / max(N̂_det, 1) > 5% → 输出"计数不可信"标记并以 N̂_d 作上限估计；否则 N = (N̂_det + N̂_d)/2。
 - **WBF 框融合与集成**：b* = Σ_i w_i b_i / Σ_i w_i，w_i = s_i（置信度）；分类融合 q* = Σ_i w_i q_i / Σ_i w_i，w_i = 1/H_i（温度标定后预测熵的倒数）。
@@ -148,11 +150,11 @@
 | # | 来源文献 | 融合点 | 预期收益 | 落地等级 |
 |---|---|---|---|---|
 | L1 | Crack segmentation of imbalanced data: The role of loss functions（Eng. Struct. 2023） | Phase 4 掩码损失默认 **Focal Tversky**（重度失衡下综合排名最优）+ **OTR 最优二值化阈值搜索**取代固定 0.5 | 小病灶/细目标掩码 IoU 与召回提升，成本近零 | 必做 |
-| L2 | Towards Minimizing Domain Gap Using Synthetic Data（IFAC 2024） | Phase 8 **扰动影响分排序**：加入/剔除消融量化每类扰动的域差贡献，输出漂移威胁优先级清单与增广配方 ROI 排序（并识别负收益增强项） | 压测可解释性 + 增广配方有依据，无需新模型 | 必做 |
-| L3 | KNNOR-Reg: oversampling in imbalanced regression（Software Impacts 2025，MIT，开源） | Phase 5 生长阶段/天数等连续标签在冻结特征空间的**直方图分箱 + KNN 插值过采样**（标签反距离加权），仅特征级不回图像 | 长尾区间回归 MAE/RMSE 改善，依赖极轻 | 标准 |
+| L2 | Towards Minimizing Domain Gap When Using Synthetic Data in Automotive Vision Control Applications（IFAC-PapersOnLine 2024） | Phase 8 **扰动影响分排序**：加入/剔除消融量化每类扰动的域差贡献，输出漂移威胁优先级清单与增广配方 ROI 排序（并识别负收益增强项） | 压测可解释性 + 增广配方有依据，无需新模型 | 必做 |
+| L3 | KNNOR-Reg: oversampling in imbalanced regression（Software Impacts 2025，开源；许可以仓库 LICENSE 为准） | Phase 5 生长阶段/天数等连续标签在冻结特征空间的**直方图分箱 + KNN 插值过采样**（标签反距离加权），仅特征级不回图像 | 长尾区间回归 MAE/RMSE 改善，依赖极轻 | 标准 |
 | L4 | Challenges and opportunities of generative models on tabular data（Appl. Soft Comput. 2024） | Phase 5 稀有类增广**三重门控**：规模 Gate（<500 例用 SMOTE 族/特征级，扩散只在大规模后开启）、ENN 式近邻一致性过滤、入池前后 AUC 对比验收 | 防止小样本下扩散增广反噬精度 | 标准 |
-| L5 | Light&fast GAN for CT image synthesis（Comput. Meth. Prog. Biomed. 2024） | Phase 5 低算力备选生成器（无预训练、消费级 GPU、约 100 张起步）+ **GLCM 纹理保真度门**作为合成样本质量门 | 算力受限时的稀有类增广替代路径 | 备选 |
-| L6 | Flexible content-aware image synthesis for maritime tasks（Appl. Ocean Res. 2025，开源） | Phase 5 内容感知合成（FAM/BAM/3D-AFM 三条件解耦 + 物理合理摆放 + 质量门）；**医学模态禁用任意姿态变换** | 农业稀有目标合成失真下降，下游 mAP 提升 | 备选 |
+| L5 | Light&fast GAN for high-fidelity CT image synthesis of liver tumor（Comput. Meth. Prog. Biomed. 2024） | Phase 5 低算力备选生成器（无预训练、消费级 GPU、约 100 张起步）+ **GLCM 纹理保真度门**作为合成样本质量门 | 算力受限时的稀有类增广替代路径 | 备选 |
+| L6 | Flexible content-aware image synthesis for maritime tasks with diffusion models（Appl. Ocean Res. 2025，开源） | Phase 5 内容感知合成（FAM/BAM/3D-AFM 三条件解耦 + 物理合理摆放 + 质量门）；**医学模态禁用任意姿态变换** | 农业稀有目标合成失真下降，下游 mAP 提升 | 备选 |
 | L7 | Decision support from financial disclosures with DNN and transfer learning（DSS 2017） | 协议级：预训练→微调两段式佐证；不平衡评估惯例（稀有类补报 balanced accuracy）；**农业生长阶段数据按时间顺序切分防时序泄漏** | 评估可信度与协议规范性 | 必做 |
 
 **已评估但排除（9 篇）**：纯数学 6 篇（有限元/非线性分析/分数布朗运动等）、亚式期权定价（数值逼近，无交集）、骨科临床病例系列（无 ML）、随机权重网络训练式激活函数（与端到端梯度训练范式不兼容）。
@@ -174,18 +176,19 @@
 
 | 组件 | 开源来源 | 成熟度 |
 |---|---|---|
-| DINOv2 / DINOv3 底座 | Meta（dinov2，权重公开） | 生产级 |
-| DINO / DEIM 检测头 | IDEA Research（DINO）、DEIM 官方仓库 | 生产级，COCO SOTA |
-| SAM 2.1 | Meta FAIR（sam2 仓库，Apache-2.0） | 生产级 |
-| 原型网络 / LoRA / SAHI | torch 生态（PEFT、sahi） | 生产级 |
+| DINOv3 ViT-L/16 底座（备选 DINOv2 ViT-L/14） | Meta（dinov3 仓库；权重 **gated**，DINOv3 License，2026-11 核验） | 生产级；gated 需申请 |
+| DEIMv2 检测配方（D-FINE / RF-DETR 为 Apache-2.0 合规备选） | Intellindust AI Lab（DEIMv2 仓库，**DEIMv2 License = NC**）；D-FINE（Apache-2.0）、RF-DETR（Apache-2.0） | 生产级；NC 仅限非商业研究 |
+| SAM 2.1（默认教师）/ SAM 3.1（P1 升级） | Meta FAIR（sam2 Apache-2.0；sam3 **SAM License**、权重 gated） | 生产级 |
+| 原型网络 / LoRA / SAHI | torch 生态（PEFT、sahi 0.14.0，MIT） | 生产级 |
 | 光谱 Transformer | SpectralFormer / UniHSFormer-X 开源实现 | 研究级可复用 |
-| 蒸馏/部署 | TensorRT / ONNX / OpenVINO | 生产级 |
+| GWFSS 2025 语义掩码 | Global Wheat 联盟（Hugging Face，CC-BY-4.0） | 研究级可复用（语义非实例） |
+| 蒸馏/部署 | TensorRT / ONNX Runtime / OpenVINO | 生产级（TensorRT 专有条款） |
 
-结论：本算法是"成熟组件的系统化集成 + 协同机制创新"，不存在需要从零攻克的基础算法问题，技术风险低。
+结论：本算法是"成熟组件的系统化集成 + 协同机制创新"，不存在需要从零攻克的基础算法问题，技术风险低。**许可边界须随交付形态调整**：DEIMv2/EdgeCrafter 为 NC 许可，商用/闭源交付前必须替换为 D-FINE/RF-DETR；DINOv3 与 SAM 3.1 权重为 gated，需登记许可接受记录。
 
 ### 2.2 数据可行性：标注需求降低 1–2 个数量级
 
-- 传统从零训练检测器需要每类数千至上万标注；本方案底座冻结 + 原型头 + SAM 零样本分割，**每类 10–50 张精标注即可冷启动**，100–500 张可达到实用精度（依据：2025 年 Ark+ 等医学基础模型在 1–5 shot 稀有病灶任务上超过此前的全监督基线；SAM 系在农业/遥感域零样本分割已有验证）。
+- 传统从零训练检测器需要每类数千至上万标注；本方案底座冻结 + 原型头 + SAM 零样本分割，**每类 10–50 张精标注即可冷启动**，100–500 张可达到实用精度（依据：2025 年 CXR 基础模型 EVA-X / Ark+ 等在线性探测与少样本设置下报告了较强泛化；SAM 系在农业/遥感域零样本分割已有公开验证。**具体数字以原文与本地复现为准，本项目不引用未复现的指标**）。
 - 海量样本场景（>10 万张）时，同一架构只需放开底座 LoRA 适配 + 全量训练检测头，无需改动框架。
 
 ### 2.3 算力与部署可行性
@@ -214,6 +217,7 @@
 | SAM 对密集重叠目标混淆 | 掩码错误 | 掩码质量自评 + 低质量样本转人工/集成复核 |
 | 小样本与全量仍有差距 | 不满足需求 5 | 一致性验证协议强制拦截，触发主动学习/LoRA 补强 |
 | 扩散/生成增广在小样本下反噬精度 | 稀有类更差 | L4 规模 Gate + ENN 过滤 + 入池前后 AUC 对比验收，不改善即弃用 |
+| 第三方许可证冲突（NC/AGPL/gated） | 商用或交付受限 | 每个依赖登记 `licenses/LICENSES.md`；DEIMv2/EdgeCrafter（NC）仅限研究，商用换 D-FINE/RF-DETR；Ultralytics（AGPL）仅对照；DINOv3/SAM 3.1（gated）登记许可接受记录 |
 
 ---
 
@@ -242,14 +246,14 @@
 
 | 场景 | 指标 | 预估目标 | 依据 |
 |---|---|---|---|
-| 菜园航拍逐株检测 | AP@50 | 92–96% | DETR 系在 COCO 已达 57.8 AP（DEIMv2-X），农业域域内精度通常更高 |
-| 菜园航拍小目标（<16 px） | 召回率相对提升 | +15–25%（vs YOLOv8 基线） | SAHI + 细节支路文献报告量级 |
+| 菜园航拍逐株检测 | AP@50 | 92–96% | DETR 系在 COCO 已达 57.8 AP（DEIMv2-X）；农业域域内精度通常更高（以 Gate 3 实测为准） |
+| 菜园航拍小目标（<16 px） | 召回率相对提升 | +15–25%（vs 无切片单尺度基线） | SAHI + 细节支路文献报告量级 |
 | 菜园株数统计 | 计数误差 | 密度-检测双分支融合后 < 3%（融合触发条件见 §1.2.9） | 密度图积分 + 检测计数一致性融合 |
-| 胸部 X 光多病种 | 平均 AUC | 0.84–0.90 | Ark+（Nature 2025）ChestX-ray14 84.43%、EVA-X 83.5 mAUC |
-| 胸部 X 光稀有病灶（1–5 shot） | AUC 超越基线 | 超过 CXR-FM 等全监督基线 | Ark+ 已验证该方向可行 |
+| 胸部 X 光多病种 | 平均 AUC | 0.80–0.85（本项目路径：DINOv3 + CXR 继续预训练；以 Gate 5 实测为准） | 对照文献：EVA-X / Ark+ 等医学预训练模型报告 ~0.83–0.85 量级 |
+| 胸部 X 光稀有病灶（1–5 shot） | AUC | 单独报告、不参与平均；不低于同数据全监督基线 -5 pp | 少样本协议 + 原型/线性探测对照 |
 | 小样本一致性 | 5-shot vs 全量性能差 | ≤ 3–5 个百分点 | 冻结底座 + 原型头的结构性保证，协议强制 |
-| 高光谱作物分类（WHU-Hi 系基准） | 总体精度 | 97–99% | UniHSFormer-X（2025）达 99.80% |
-| 推理速度 | 筛查路径 / 全专家链 / 边缘 | 100+ FPS / 100–300 ms·图 / 15–30 FPS | RT-DETR/DEIM 实时化 + 蒸馏 |
+| 高光谱作物分类（WHU-Hi 系基准） | 总体精度 | 97–99%（设计目标；以 Gate 9 实测为准） | 对照文献 UniHSFormer-X（2025）报告约 99.8% |
+| 推理速度 | 筛查路径 / 全专家链 / 边缘 | 100+ FPS / 100–300 ms·图 / 15–30 FPS | DEIMv2 实时化 + 蒸馏；以实测为准 |
 | 鲁棒性（光照/遮挡/噪声扰动） | 精度降幅 | ≤ 5% | 基础模型泛化性 + TTA + 校准集成 |
 
 ### 4.2 验证方案
@@ -263,18 +267,29 @@
 
 ## 5. 主要参考文献
 
-1. Oquab et al., *DINOv2: Learning Robust Visual Features without Supervision*, 2023. [arXiv](https://arxiv.org/abs/2304.07193)
-2. Zhang et al., *DINO: DETR with Improved DeNoising Anchor Boxes for End-to-End Object Detection*, ICLR 2023. [arXiv](https://arxiv.org/abs/2203.03605)
-3. Shihua Huang et al., *DEIM: DETR with Improved Matching for Fast Convergence*, CVPR 2025.
-4. DEIMv2: *Real-Time Object Detection Meets DINOv3*, 2025.
-5. Kirillov et al., *Segment Anything*, ICCV 2023. [arXiv](https://arxiv.org/abs/2304.02643)
-6. Ravi et al., *SAM 2: Segment Anything in Images and Videos*, 2024；SAM 2.1, 2025. [arXiv](https://arxiv.org/abs/2408.00714)
-7. Zhao et al., *RT-DETR: DETRs Beat YOLOs on Real-time Object Detection*, CVPR 2024. [arXiv](https://arxiv.org/abs/2304.08069)
-8. Akyürek et al., *Slicing Aided Hyper Inference and Fine-tuning for Small Object Detection*, ICIP 2022. [arXiv](https://arxiv.org/abs/2202.06934)
-9. Snell et al., *Prototypical Networks for Few-shot Learning*, NeurIPS 2017.
-10. Hu et al., *LoRA: Low-Rank Adaptation of Large Language Models*, 2021. [arXiv](https://arxiv.org/abs/2106.09685)
-11. *CheXFound: A Visual Foundation Model for Chest X-Ray*, IEEE TMI, 2025.
-12. *EVA-X: Self-Supervised Foundation Models for Chest X-Rays*, npj Digital Medicine, 2025.
-13. *Ark+: A Foundation Model for Chest X-Rays*, Nature, 2025.
-14. Du et al., *UniHSFormer-X: Unified Transformer for Hyperspectral Crop Monitoring*, Agriculture (MDPI), 2025. [MDPI](https://www.mdpi.com/2077-0472/15/13/1427/)
-15. Hong et al., *SpectralFormer: Rethinking Hyperspectral Image Classification with Transformers*, IEEE TGRS, 2022.
+> v1.4 已按 2026-11-10 逐条核验标题/出处/年份；标注 ⚠️ 者为 v1.3 及以前版本中的不准确表述，已更正。
+
+1. Oquab et al., *DINOv2: Learning Robust Visual Features without Supervision*, 2023（TMLR 2024）。[arXiv](https://arxiv.org/abs/2304.07193)
+2. Siméoni et al., *DINOv3*, 2025。arXiv 2508.10104 [arXiv](https://arxiv.org/abs/2508.10104)
+3. Zhang et al., *DINO: DETR with Improved DeNoising Anchor Boxes for End-to-End Object Detection*, ICLR 2023。[arXiv](https://arxiv.org/abs/2203.03605)
+4. Huang et al., *DEIM: DETR with Improved Matching for Fast Convergence*, CVPR 2025。
+5. Huang et al., *DEIMv2: Real-Time Object Detection Meets DINOv3*, 2025。arXiv 2509.20787（**代码/权重为 DEIMv2 License = NC**）
+6. Kirillov et al., *Segment Anything*, ICCV 2023。[arXiv](https://arxiv.org/abs/2304.02643)
+7. Ravi et al., *SAM 2: Segment Anything in Images and Videos*, 2024；**SAM 2.1 于 2024-09-30 发布**（⚠️ 旧版写 2025）。[arXiv](https://arxiv.org/abs/2408.00714)
+8. Carion et al., *SAM 3: Segment Anything with Concepts*, 2025；**SAM 3.1 Object Multiplex 于 2026-03-27 发布**（SAM License，gated）。
+9. Zhao et al., *RT-DETR: DETRs Beat YOLOs on Real-time Object Detection*, CVPR 2024。[arXiv](https://arxiv.org/abs/2304.08069)
+10. Peng et al., *D-FINE: Redefine Regression Task of DETRs as Fine-grained Distribution Refinement*, ICLR 2025 Spotlight（Apache-2.0）。
+11. Akyürek et al., *Slicing Aided Hyper Inference and Fine-tuning for Small Object Detection*, ICIP 2022。[arXiv](https://arxiv.org/abs/2202.06934)
+12. Snell et al., *Prototypical Networks for Few-shot Learning*, NeurIPS 2017。
+13. Hu et al., *LoRA: Low-Rank Adaptation of Large Language Models*, ICLR 2022。[arXiv](https://arxiv.org/abs/2106.09685)
+14. *Chest X-ray Foundation Model with Global and Local Representations Integration*（模型名 CheXFound；⚠️ 旧版把模型名当论文标题），arXiv 2502.05142，IEEE TMI 2025。
+15. *EVA-X: a foundation model for general chest x-ray analysis with self-supervised learning*, npj Digital Medicine 2025。DOI s41746-025-02032-z
+16. *A fully open AI foundation model applied to chest radiography*（模型名 Ark+；⚠️ 旧版标题不准确），Nature 2025。DOI 10.1038/s41586-025-09079-8
+17. *UniHSFormer-X: Prototype-Routed Semantic Structuring ...*, Agriculture (MDPI) 2025, 15(13):1427（⚠️ 旧版标题/作者不准确）。
+18. Hong et al., *SpectralFormer: Rethinking Hyperspectral Image Classification with Transformers*, IEEE TGRS 2022。DOI 10.1109/TGRS.2021.3064958
+19. *Frozen-DETR: Bridging Image and Language for Cognitive Object Detection*, NeurIPS 2024（Apache-2.0；冻结 DINOv2-L + DETR 头，COCO +4.8 AP）。[GitHub](https://github.com/iSEE-Laboratory/Frozen-DETR)
+20. WheatSAM, CRV 2025。DOI 10.21428/d82e957c.12450d3b
+21. *The Global Wheat Full Semantic Organ Segmentation (GWFSS) dataset*, Plant Phenomics 2025。DOI 10.1016/j.plaphe.2025.100084
+22. David et al., *Global Wheat Head Detection 2021*, Plant Phenomics 2021。DOI 10.34133/2021/9846158；数据：Zenodo 10.5281/zenodo.5092309（CC-BY-4.0）
+23. Wang et al., *ChestX-ray8: Hospital-scale Chest X-ray Database and Benchmarks*, CVPR 2017
+24. §1.2.10 的 L1–L7 文献（Focal Tversky、IFAC 2024、KNNOR-Reg、ASOC 2024、LF-GAN、AOR 2025、DSS 2017）出处见该节表格，v1.4 已补全标题并按核验结果标注许可与出处。

@@ -1,0 +1,22 @@
+# 忽略训练与运行产物（仓库只保留文档与源码）
+weights/
+datasets/
+artifacts/
+logs/
+external/
+runs/
+outputs/
+checkpoints/
+*.pth
+*.pt
+*.onnx
+*.engine
+*.plan
+*.safetensors
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.env
+.DS_Store
+Thumbs.db
