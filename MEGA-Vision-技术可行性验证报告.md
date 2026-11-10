@@ -156,12 +156,12 @@
 
 | 项 | v2.0/v2.4 预算 | v3.0 | 说明 |
 |---|---|---|---|
-| Phase 2 医学继续预训练 | 6 h | 6 h | 224 输入、1 epoch ≈ 875 iters |
-| Phase 3 COCO 头初始化 | 1.5 d | 1.5 d | 12 epochs ≈ 8.9 万 iters；可跳过走 GWHD 直训 |
-| Phase 3 GWHD 微调 | 8 h | ≤10 h | 30 epochs × ceil(N_train/16)，N_train 以 CSV 实测（约 4,700 时 ≈8.8k iters） |
+| Phase 2 医学继续预训练 | 6 h | 4–6 h（实测后修正） | 224 输入、1 epoch = 876 iters（112,120÷128）；须只用官方 train split |
+| Phase 3 COCO 头初始化 | 1.5 d | 1.5 d（wall-clock） | 12 epochs ≈ 17.7 万 iters（batch=8；若登记 batch=16 则 ≈8.9 万）；可跳过走 GWHD 直训（≈1 d） |
+| Phase 3 GWHD 微调 | 8 h | ≤10 h（wall-clock） | 30 epochs × ceil(N_train/8)，N_train 以官方 CSV 实测为准（约 3,655–4,000，旧 4,700/3,422 无依据） |
 | Phase 4 SAM LoRA + 蒸馏 | 12 h | 12 h + 2–4 h（SAM 3.1 教师可选） | SAM 3.1 仅推理 |
-| Phase 5/6/7/8 | 6/8/24/8 h | 不变 | — |
-| 单卡总预算 | 4–6 天 | 4–6 天（含 COCO；跳过约 3–4 天） | RTX 4090 基准 |
+| Phase 5/6/7/8 | 6/8/24/8 h | 6–8 / 24（8 蒸馏 + 16 成员训练）/ 24 / 8 h | Phase 6 含两成员域微调 +16 h（工作流 v3.0 补齐集成闭环） |
+| 单卡总预算 | 4–6 天 | **5.5–7.5 天**（含 COCO 与集成成员；跳过 COCO 并收敛成员约 4–5.5 天） | RTX 4090 基准 |
 
 ---
 

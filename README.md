@@ -42,5 +42,5 @@
   - **DEIMv2 / EdgeCrafter**：**NC 许可，禁止商用**——仅限非商业研究/竞赛；商用前必须替换为 D-FINE（Apache-2.0）或 RF-DETR（Apache-2.0）；
   - **SAM 2.1**：Apache-2.0；**SAM 3.1**：SAM License（自定义、gated，可商用附条件）；
   - **Ultralytics（YOLO/RT-DETR）**：AGPL-3.0（传染性，仅作对照/非交付用途）；
-  - 数据集：GWHD/GWFSS/WHU-Hi 为 CC-BY-4.0（需署名）；ChestX-ray14 需引用论文并致谢 NIH；SIIM-ACR/TBX11K 按各自科研条款。
+  - 数据集：GWHD / GWFSS 为 CC-BY-4.0（需署名）；WHU-Hi 为学术研究用途（按官方要求申请/引用）；ChestX-ray14 需引用论文并致谢 NIH；SIIM-ACR/TBX11K 按各自科研条款。
 - 医学输出免责声明：本项目结果仅供研究辅助，不作临床诊断依据；医学数据仅按各自许可用于研究。

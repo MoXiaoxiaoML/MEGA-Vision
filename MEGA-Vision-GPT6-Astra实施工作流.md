@@ -271,7 +271,8 @@
 | RT-DETR（**区分实现**） | lyuwenyu 官方实现 Apache-2.0；Ultralytics 实现 **AGPL-3.0**（传染性） | 集成/交付优先用 lyuwenyu 实现；Ultralytics 仅对照 |
 | Ultralytics（RT-DETR/ YOLO 备选路线） | **AGPL-3.0** | 传染性条款；仅作对照或非交付用途，商用/闭源需换 mmdet 或 PyTorch 原生实现 |
 | TensorRT | NVIDIA 专有（免费工具） | 部署包分发须遵守 NVIDIA 条款 |
-| 数据集 GWHD / GWFSS / WHU-Hi | CC-BY-4.0 | 需署名；GWFSS 仅语义器官掩码 |
+| 数据集 GWHD / GWFSS | CC-BY-4.0 | 需署名；GWFSS 仅语义器官掩码 |
+| 数据集 WHU-Hi | 学术研究用途（按官方页面要求申请与引用） | 不属 CC-BY；不得用于商业再分发 |
 | 数据集 ChestX-ray14 | NIH 公开（需引用论文并致谢） | 仅研究用途；输出附医学免责声明 |
 | 数据集 SIIM-ACR / TBX11K | Kaggle/科研条款 | 按各自页面条款，仅科研 |
 | OpenMMLab/mmdet（如引入） | Apache-2.0 | 可商用 |
@@ -486,6 +487,7 @@ mega-vision/
 - **按国家域外划分**【P0 强制】：用 GWHD `Metadata.csv` 生成"留出国家"划分：`scripts/country_split.py` 以固定种子留出 2–3 个国家作为**域外测试集**，训练/验证用其余国家；划分清单与实测国家/机构数写入 `artifacts/manifest.json` 与 phase-1 报告（**国家/机构数若与"12 国 / 16 机构"文献口径不一致，以 Metadata.csv 实测为准并记录差异**）。
 - **few-shot 划分器**：`fewshot_split.py --k 5|10|50` 输出固定种子（42）的支持集/查询集/剩余集清单，保证可复现。
 - **增强集**：`augment.py` 实现 Mosaic、Copy-Paste、亮度/对比度/模糊/噪声扰动（Phase 8 鲁棒性压测复用）。
+- **CXR14 官方划分（v3.0 新增，Phase 2/5 共用）**：官方 split 为 **train 86,524 / test 25,596**（官方 test 标签不公开）。本项目协议：训练集只用官方 train（Phase 2 继续预训练只用其中未标注图像）；验证/测试从官方 train 中按**患者级**留出（患者 ID 不跨集）；官方 test 仅作"无标签推理/外部一致性检查"，不参与任何训练、阈值、模型选择。划分清单与患者 ID 哈希写入 `artifacts/manifest.json`。
 - **Gate 1**：`python -m tests.test_data` 全部通过；输出每数据集统计报告（图像数/标注数/类别分布/目标尺寸直方图，写入 `docs/reports/phase-1.md`）。**通过标准：GWHD 以官方 CSV 实测行数登记且数据集就位（约 6,500 张量级）、CXR14 ≥ 5 万图实际就位、小目标（<16px）占比实测并登记（若 <10% 须在报告中说明数据特性，不阻断本 Phase）、`licenses/DATASETS.md` 完整。**
 
 ### Phase 2：视觉底座（创新点 1、5 的基座）
@@ -496,7 +498,7 @@ mega-vision/
   4. 跨尺度注意力融合：细节特征与底座上采样的 1/4 特征做交叉注意力后拼接，输出供掩码分支/ROI 特征使用（检测头使用 {P3,P4,P5}）。
 - **验证实验**：在 CXR14 子集做 5-shot 线性探测（正常/异常二分类）：特征 = 底座全局 token 平均池化；分类器 = 逻辑回归（sklearn）。
 - **Gate 2**：线性探测 5-shot 二分类 AUC ≥ 0.70；各尺度特征形状自检通过（写死预期形状断言，如 `P3=(B,128,128,C)`、`P5=(B,32,32,C)`）；底座权重 SHA-256 与 `DINOv3 License` 接受记录写入 `licenses/` 与 manifest。不达标 → 先检查底座权重加载与冻结是否正确；仍不达标 → 在 CXR14 未标注图像上做继续自监督预训练后重测（见下，须先过合规确认）。
-- **医学底座域适配（本 Phase 完成，不留给 Phase 5；须先过合规确认）**：在 CXR14 **官方训练集**未标注图像上对底座做**轻量继续自监督预训练**（v3.0 修正：**只能用官方 train split，严禁使用 test split**，否则构成转导式泄漏；CXR14 官方 split 见 Phase 1）：输入 224、**默认 MAE 重建 + LoRA**（备选 DINO 自蒸馏、全量小学习率；切换条件写入 DECISIONS），至少 1 个 epoch = 112,120 ÷ 128 = **876 iters**；单卡预算先给 **4–6 h**，但必须在首轮实测 `iters × s/iter` 后修正预算并写入报告（876 iters@224 实际可能只需 10–40 min，勿以旧预算当事实）。产出医学适配底座 `weights/mega_dinov3_cxr_adapted.pth`，Phase 5 直接使用。
+- **医学底座域适配（本 Phase 完成，不留给 Phase 5；须先过合规确认）**：在 CXR14 **官方训练集**未标注图像上对底座做**轻量继续自监督预训练**（v3.0 修正：**只能用官方 train split，严禁使用 test split**，否则构成转导式泄漏；CXR14 官方 split = train 86,524 / test 25,596，见 Phase 1）：输入 224、**默认 MAE 重建 + LoRA**（备选 DINO 自蒸馏、全量小学习率；切换条件写入 DECISIONS），至少 1 个 epoch = 112,120 ÷ 128 = **876 iters**；单卡预算先给 **4–6 h**，但必须在首轮实测 `iters × s/iter` 后修正预算并写入报告（876 iters@224 实际可能只需 10–40 min，勿以旧预算当事实）。产出医学适配底座 `weights/mega_dinov3_cxr_adapted.pth`，Phase 5 直接使用。
   - **方法诚实性（v3.0 修正）**：不得声称"继续预训练 1 epoch 即可反超 CheXzero / 达到 RAD-DINO 级 0.85"——该断言无文献支撑。正确做法：跑 **1 epoch 快速检查 + ≥10 epochs 正式对比**（以线性探测 AUC 为判据），与"原始 DINOv3 特征"做 A/B，收益写入 phase-2 报告；参考基线（EVA-X、RAD-DINO 等）只作文献对比，**其权重不得引入**。
   - **合规框（v3.0 新增）**：外部医学数据的使用受数据条款与目标场景约束；**若项目目标场景明确禁止外部医学数据（例如"仅允许官方数据"的竞赛/评测），本步骤必须改为仅用官方数据或跳过**，并在 `DECISIONS.md` 记录用户确认；本步骤产物不得用于商业或临床用途。
 - **底座策略分档**【P2 可选，默认仍为冻结档】：`configs/base.yml` 增加 `backbone.regime: frozen|lora|full` 三档，按标注规模自动选择——<1k 标注 → `frozen`；1k–10k → `lora`；>10k → `full`（full 档在 24 GB 显存需梯度检查点/ZeRO，建议 ≥48 GB 或改用 LoRA；DINOv3 主干 ≥ 300M 参数）。Phase 7 报告中必须给出"档位选择 vs 性能"对照表。
@@ -508,10 +510,10 @@ mega-vision/
 - **密度图计数分支**【P1 标准】：（`density_branch.py`）检测头旁增加轻量密度图回归分支（CSRNet/TasselNet 式，点标注监督由 GWHD 框中心自动生成，高斯核 σ 按框尺寸自适应）；输出密度图服务两件事：① 农业株数统计的密度积分（Phase 5 融合）；② 自适应切片策略（见下）。与检测头联合训练，无需单独数据。
 - **内置掩码分支（预留）**【P1 标准，训练在 Phase 4 收尾执行】：`mask_branch.py` 为每个 DETR query 增加轻量掩码分支（Mask DINO 式 query→mask）；其训练依赖 Phase 4 产出的误差感知微调 SAM 教师，因此掩码蒸馏在 Phase 4 收尾完成。本 Phase 只预留分支代码与损失接口。
 - **SAHI 接入注意**：sahi 不原生支持 DEIMv2 模型，按其自定义模型接口（DetectionModel 子类封装推理）接入切片预测，或直接用 sahi 的切片工具函数自行拼接。
-- **训练（两段式，防收敛不足）**：DETR 系检测头从零训练在小数据集上收敛慢（GWHD 训练图数按官方 CSV 实测，约 4,700 量级），30 epochs 从零训头大概率不达 0.90——采用两段式：
+- **训练（两段式，防收敛不足）**：DETR 系检测头从零训练在小数据集上收敛慢（GWHD 训练图数以官方 CSV 实测为准，约 3,655–4,000 量级），30 epochs 从零训头大概率不达 0.90——采用两段式：
   1. **通用头初始化**：先在 COCO train2017（118,287 图，约 20 GB）上用冻结底座 + 可训练检测头训 12 epochs（参考 Frozen-DETR 的冻结特征思路与 DETR 训练预算；**须先做 1 epoch smoke 验证 AP 有可学习信号**，再按 12 epochs 预算执行，不能直接照搬其 +4.8 AP 结论），4090 单卡约 1.5 天（12 × 118,287 ÷ 16 ≈ **8.9 万 iters**）；通过标准：COCO val AP ≥ 35（宽松门槛，只为获得通用检测先验）。【P1 标准】可采用渐进分辨率（640 训 8 epochs → 1024 训 4 epochs，省约 40% 时间），但必须先做 A/B 确认精度无损失后才采用；【P1 标准】也可尝试加载 DEIMv2 官方 COCO 权重做**形状过滤式部分迁移**（主干维度不同，只迁移形状匹配的层，报告加载率），必须与"从零头初始化"做 A/B 后再采用。
   2. **GWHD 域微调**：加载上述检测头，GWHD **30 epochs** 微调；每 epoch 迭代数 = `ceil(N_train / batch)`（按 phase-1 实测 N_train）。
-  - COCO 下载/时间不可行时的替代方案：GWHD 直接训 90 epochs（`epochs=90`），报告中必须记录该偏离。**预算口径（v3.0 更正）**：90 epochs ≈ 1 天（按 30 epochs ≤10 h 线性外推）；旧版"约 0.5 d"与"两段式省 60%"的算术不成立（两段式 = COCO 1.5 d + GWHD ≤10 h ≈ 44 h，> 90-epoch 直训的 ~24 h），已作废——**是否两段式取决于 AP 差距，不取决于总时长**。
+  - COCO 下载/时间不可行时的替代方案：GWHD 直接训 90 epochs（`epochs=90`），报告中必须记录该偏离。**预算口径（v3.0 更正）**：90 epochs ≈ 1 天（wall-clock，按实测吞吐修正）；旧版"约 0.5 d"与"两段式省 60%"的算术不成立（两段式 = COCO 1.5 d + GWHD ≤10 h ≈ 44 h，> 90-epoch 直训的 ~24 h），已作废——**是否两段式取决于 AP 差距，不取决于总时长**。
   - 超参：`lr=1e-4(head)/1e-3(neck)`、`batch=8`（默认；冻结底座 + AMP 下 24GB 卡可试 16，须实测显存后写入 `DECISIONS.md`；OOM 按第 8 部分降配）、`ema=true`、分辨率 1024×1024、AMP。记录显存峰值与每 epoch 耗时。
 - **自适应切片推理**【P1 标准，v3.0 物理口径修正】：`infer_sahi.py` 实现**密度引导的稀疏切片**。**关键约束（审计 T-02）**：GWHD 图像本身为 1024×1024、训练/推理输入也是 1024，因此 `slice=1024` **不产生任何等效分辨率放大**，与全图单次推理等价；要实现"微小目标专项增强"，必须走"**小切片 → 上采样回 1024 输入**"的路径：
   - 密集区：slice **512** → resize 1024（等效 2× 放大）/ overlap 0.2；
@@ -522,7 +524,7 @@ mega-vision/
 - **导出冒烟（审计 T-12）**：Phase 3 收尾前用 1 张图做 ONNX 导出 smoke（opset ≥ 17），记录 DETR 解码器（grid_sample/动态 shape）能否导出；失败则按第 8 部分处理（改可导出结构或仅导主干），不得把导出问题留到 Phase 6 才暴露。
 
 ### Phase 4：实例分割专家（创新点 3、7）
-- **并行性**：本 Phase 只依赖 Phase 2 与数据集（误差感知微调用 GT 框 + SIIM 掩码，不依赖 Phase 3 的检测框），双卡环境可与 Phase 3 并行执行；单卡则先 Phase 3 后 Phase 4。
+- **并行性**：本 Phase 只依赖 Phase 2 与数据集（误差感知微调用 GT 框 + SIIM 掩码，不依赖 Phase 3 的检测框），双卡环境可与 Phase 3 并行执行；**并行前提**：Phase 3 的 `mask_branch.py` 预留代码与损失接口已合并到主干（不依赖已训练的检测头）；单卡则先 Phase 3 后 Phase 4。
 - **实现（默认教师 = SAM 2.1）**：`sam_prompt.py` 加载 `sam2.1_hiera_large`（官方权重直链见 3.2），以 GT 检测框为 box prompt 输出掩码；`mask_iou_head.py` 实现轻量 IoU 自评头（输入 = ROI 图像 + 掩码，输出预测 IoU，L1 损失）。
 - **误差感知微调（必做步骤，非可选）**：文献（WheatSAM，CRV 2025）证明 SAM 对"检测器生成的框"很敏感，直接零样本在麦穗类密集小目标上会退化——必须对 SAM 2.1 做 LoRA 微调，且微调时对 box prompt 注入受控扰动（随机平移 ±20–50px、缩放 ±20–50%、重叠 0.1–0.3，扰动概率 0.2–0.8）模拟检测误差。【v2.4 文献融合】掩码损失默认采用 **Focal Tversky**（E&F 2023 在重度失衡分割上综合排名最优；α/β/γ 按领域小规模网格搜索）；掩码二值化阈值**不做固定 0.5**，用 **OTR 最优阈值搜索**（验证集网格搜索，随域/模型固化到 config）。
 - **微调/监督数据（v3.0 更新）**（GWHD 2021 只提供检测框，没有 GT 掩码）：① SIIM-ACR 气胸真实掩码（数量以实际下载统计为准）；② 自建菜园掩码子集（100–200 株）；③ **GWFSS 2025 语义掩码（新增）：只取"穗 spike"类作为语义先验/教师信号，非实例掩码、与 GWHD 配对性须先验证**；④ 用 SAM 2.1 对 GWHD GT 框生成的伪掩码（自训练，可加扰动）。IoU 自评头的训练数据用 ①+②。
@@ -632,8 +634,8 @@ robustness: {max_drop_pp: 5.0, cross_country_max_drop_pp: 8.0}
 | 全 | 基线金丝雀复现（每 Phase 前置） | 每项 ≤ 1 h | 环境健康检查；失败禁止进入该 Phase |
 | 2 | CXR14 5-shot 探测 | 2 h | 冻结底座纯特征提取 + sklearn 逻辑回归 |
 | 2 | 医学底座继续预训练 | 4–6 h（实测后修正） | 224 输入、1 epoch = 876 iters（112,120÷128）；首轮记录 iters×s/iter 后更新预算；**只能用官方 train split** |
-| 3 | COCO 头初始化 | 1.5 d | 12 epochs ≈ 8.9 万 iters（118,287 ÷ 16 × 12；冻结底座 + AMP；渐进分辨率需先 A/B）；跳过则走 GWHD 90-epoch 直训路线（约 1 d；旧版 0.5 d 算术不成立，已更正） |
-| 3 | GWHD 域微调（含密度图分支） | ≤ 10 h | 30 epochs × ceil(N_train/16) iters；按 N_train≈4,700 估算约 8.8k iters；**以 phase-1 实测 N_train 重算并在报告注明** |
+| 3 | COCO 头初始化 | 1.5 d（wall-clock，按实测吞吐修正） | 12 epochs ≈ **17.7 万 iters**（118,287 ÷ 8 × 12，batch=8 默认；若 DECISIONS 登记改用 batch=16 则 ≈8.9 万 iters）；冻结底座 + AMP；渐进分辨率需先 A/B；跳过则走 GWHD 90-epoch 直训路线（约 1 d） |
+| 3 | GWHD 域微调（含密度图分支） | ≤ 10 h（按实测吞吐修正） | 30 epochs × ceil(N_train/8) iters；N_train 以 phase-1 实测为准（约 3,655–4,000 量级，旧 4,700/3,422 均无依据）→ 约 1.4–1.5 万 iters |
 | 4 | SAM 2.1 LoRA 误差感知微调 + 掩码蒸馏回灌 | 12 h | GWHD 伪掩码 + SIIM 子集 + GWFSS 语义先验 + 内置掩码分支蒸馏 |
 | 4 | SAM 3.1 教师推理（P1 可选） | 2–4 h | 仅推理；显存不足降分辨率或回退 SAM 2.1 |
 | 5 | 医学双通道头 + 农业分析头 | 6–8 h | 全局+ROI 通道；底座特征缓存后分类头训练近乎秒级/epoch；KNNOR/ENN 为离线秒级 |
